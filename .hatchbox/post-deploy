@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# The full-page cache uses Tempfile to write to a .(random) filename and rename
+# to the final. At the tail of a deploy, this script could delete the file
+# between those two steps and the rename would throws an exception. Catching
+# that might mask real bugs filling the cache, so we don't delete those
+# tempfiles. Leaving a handful of cached files is OK.
+find /home/deploy/lobsters/current/public/cache/ -name s -type d -prune -o -type f -not -name '.*' -delete
+
+# kick off rebuilding story page cache
+cd /home/deploy/lobsters/current
+bundle exec rails runner "RefillStoryPageCacheJob.perform_later"
+
+# override hatchbox services to move caddy to 9001
+cp --preserve=mode,timestamps hatchbox/lobsters-service.socket.port.conf ~/.config/systemd/user/lobsters-server.socket.d
+cp --preserve=mode,timestamps hatchbox/lobsters-service.server.port.conf ~/.config/systemd/user/lobsters-server.service.d
+systemctl --user daemon-reload
+
+# see hatchbox/root-deploy
+touch /home/deploy/lobsters/current

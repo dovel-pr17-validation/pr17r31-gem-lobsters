@@ -1,0 +1,34 @@
+<%# locals: (tag:, related:) -%>
+<div class="box">
+  <p>
+    Stories <a href="/tags#<%= tag.tag %>">tagged</a> as
+    <%= tag_link(tag) %>
+    <%= tag.description %>
+    <br>
+    <% if tag.hotness_mod != 0.0 %>
+      Hotness modifier <%= tag.hotness_mod %>
+      (<%= tag.hotness_mod > 0 ? 'raises' : 'lowers' %> a story's rank).
+    <% end %>
+    It takes <%= tag.quorum %> user suggestions to add or remove this tag.
+    <% if tag.privileged %>
+      Only mods can use this tag.
+    <% elsif !tag.permit_by_new_users %>
+      Tag is <a href="/about#new-user-tags">not permitted</a> on stories submitted by new users.
+    <% end %>
+  </p>
+
+  <% if filtered_tags.include? tag %>
+    You have <%= link_to "filtered", filters_path %> this tag.
+    Links to tagged stories and their comments will not be shown elsewhere on the site for you.
+  <% end %>
+
+
+  <% if related.length > 0 %>
+    <p>
+      Most often also tagged with
+      <% related.each do |tag| %>
+        <%= tag_link(tag) %>
+      <% end %>
+    </p>
+  <% end %>
+</div>

@@ -1,0 +1,89 @@
+# typed: false
+
+require "rails_helper"
+
+RSpec.describe "search controller", type: :request do
+  before do
+    @foo_bar_story = create(:story, title: "foo bar")
+    StoryText.fill_cache! @foo_bar_story # normally a bg job
+    @hello_world_comment = create(:comment, comment: "hello world", story: @foo_bar_story)
+  end
+
+  it "loads the search form" do
+    get "/search"
+    expect(response).to be_successful
+  end
+
+  it "can find zero hits" do
+    get "/search", params: {q: "aaa"}
+
+    expect(response).to be_successful
+    expect(response.body).to include("0 results")
+  end
+
+  it "can find a comment" do
+    get "/search", params: {q: "hello", what: "comments", order: "newest"}
+
+    expect(response).to be_successful
+    expect(response.body).to include("world")
+  end
+
+  it "can search stories" do
+    get "/search", params: {q: "foo", what: "stories", order: "newest"}
+
+    expect(response).to be_successful
+    expect(response.body).to include("bar")
+  end
+
+  it "doesn't allow sql injection" do
+    # real query that threw a 500 in prod
+    get "/search", params: {q: "tag:formalmethods tag:testing') AND EXTRACTVALUE(4050,CONCAT(0x5c,0x7170787171,(SELECT (ELT(4050=4050,1))),0x71627a6b71)) AND ('pDUW'='pDUW", what: "stories", order: "newest"}
+
+    expect(response).to be_successful
+    expect(response.body).to include("0 results")
+  end
+
+  it "doesn't serve to searx" do
+    get "/search?utf8=%E2%9C%93&q=query&what=stories&order=relevance"
+
+    expect(response).to be_successful
+    expect(response.body).to include("0 results")
+  end
+
+  it "works logged in, with vote hydration" do
+    sign_in(user = create(:user))
+    Vote.vote_thusly_on_story_or_comment_for_user_because 1, @hello_world_comment.story.id, @hello_world_comment.id, user.id, nil
+
+    get "/search", params: {q: "hello", what: "comments", order: "newest"}
+    expect(response.body).to include("world")
+  end
+
+  it "displays golang language hint" do
+    get "/search", params: {q: "go", what: "comments", order: "newest"}
+
+    expect(response.body).to include("terribly-named")
+    expect(response.body).to include("tag:go")
+  end
+
+  it "displays c++ language hint" do
+    get "/search", params: {q: "c++", what: "comments", order: "newest"}
+
+    expect(response.body).to include("tag:c")
+    expect(response.body).to include("tag:c++")
+  end
+
+  it "displays ai topic hint" do
+    get "/search", params: {q: "ai", what: "comments", order: "newest"}
+
+    expect(response.body).to include("artificial intelligence/machine learning")
+    expect(response.body).to include("tag:ai")
+  end
+
+  it "displays ml language and topic hint" do
+    get "/search", params: {q: "ml", what: "comments", order: "newest"}
+
+    expect(response.body).to include("artificial intelligence/machine learning")
+    expect(response.body).to include("tag:ai")
+    expect(response.body).to include("tag:ml")
+  end
+end

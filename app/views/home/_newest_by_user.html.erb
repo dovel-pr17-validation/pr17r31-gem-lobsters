@@ -1,0 +1,6 @@
+<%# locals: (newest_by_user:) -%>
+
+<p>
+  Newest stories submitted by
+  <%= link_to newest_by_user.username, user_path(newest_by_user) %>.
+</p>

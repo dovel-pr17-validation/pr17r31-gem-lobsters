@@ -1,0 +1,138 @@
+#!/usr/bin/bash
+
+set -e
+cd /home/deploy/lobsters/current/hatchbox
+
+# This is a series of workarounds for misdesigns:
+#
+# 1. Hatchbox can't run scripts as root on deploy. This script provisions and
+#    configures system services and such an important script must live in the
+#    repo.
+#
+# 2. A service unit can't use PathChanged itself, it requires a path unit.
+#    That's root-deploy.path.
+#
+# 3. A path unit can't use ExecStart itself, it requires a service unit.
+#    That's root-deploy.service.
+#
+# 4. Path units have an unfixed bug: https://github.com/systemd/systemd/issues/17727
+#    Systemd fails to consider a replaced symlink as 'changed' or 'modified'.
+#    So .hatchbox/post-deploy touches the symlink on boot.
+#
+# 5. https://i.imgur.com/MCHXwyi.jpeg
+
+APP_ETC=/home/deploy/lobsters/shared/etc
+
+# https://groups.google.com/g/golang-announce/c/PCoQcdxoScw Caddy and Anubis are
+# Go and had MPTCP listeners.
+sysctl -w net.mptcp.enabled=0
+
+# the only way to get a PTR on DO name the VPS with the fqdn, ugh
+# https://docs.digitalocean.com/products/networking/dns/how-to/manage-records/#ptr-rdns-records
+echo "lobste.rs" > /etc/hostname
+
+# Install Anubis
+if [ ! -f /tmp/anubis_1.27.0_amd64.deb ]; then
+  curl -Ls https://github.com/TecharoHQ/anubis/releases/download/v1.27.0/anubis_1.27.0_amd64.deb \
+         -o /tmp/anubis_1.27.0_amd64.deb
+  apt install /tmp/anubis_1.27.0_amd64.deb
+fi
+
+# server packages
+apt install -y iptables-persistent libsasl2-modules mailutils opendkim postfix restic
+
+# We build our own sqlite3 (.bundle/config), remove any system copy to avoid
+# infinite confusion when getting different query plans from a different version.
+apt remove -y sqlite3
+
+# 2026-01-02 workaround failure to build commonmarker because there aren't
+# precompiled gems for ruby 4.0.0 yet
+# https://github.com/gjtorikian/commonmarker/issues/427
+apt install -y libclang-dev
+
+# configure opendkim for postfix
+install -p -m 0644 opendkim.m4 /etc/mail/m4/
+install -p -m 0644 opendkim.conf /etc/
+install -p -m 0644 opendkim.service /etc/systemd/system/
+if [ ! -f /etc/dkimkeys/mail.private ]; then
+  opendkim-genkey --verbose --restrict --selector=mail --subdomains --domain=lobste.rs --directory=/etc/dkimkeys/
+fi
+mkdir -p /var/spool/postfix/opendkim
+chown -R opendkim:opendkim /var/spool/postfix/opendkim /etc/dkimkeys
+systemctl restart opendkim
+
+# configure postfix
+adduser postfix opendkim
+install -p -m 0644 -t /etc/postfix/ main.cf master.cf virtual_aliases transport
+postmap /etc/postfix/virtual_aliases
+postmap /etc/postfix/transport
+# prod $APP_ETC/sasl_password format:
+# [smtp.postshiba.com]:587 smtp_username:password
+install -p -m 0600 -t /etc/postfix/ $APP_ETC/sasl_passwd
+postmap /etc/postfix/sasl_passwd
+postfix check
+postfix reload
+
+# I get bounces daily from journalduhacker.net who left my email in their config.
+install -p -m 0644 aliases /etc/
+ADMIN_EMAIL=$(cat $APP_ETC/admin_email)
+sed -i "s/ADMIN_EMAIL/$ADMIN_EMAIL/g" /etc/aliases
+newaliases
+
+# https://github.com/lobsters/lobsters/issues/1739
+install -p -m 0644 syslog.conf /usr/lib/systemd/journald.conf.d/
+systemctl force-reload systemd-journald
+
+# keep Caddy's per-request access logs out of journald (they're in caddy.log).
+install -D -p -m 0644 caddy-no-access-journal.conf /etc/systemd/system/caddy.service.d/caddy-no-access-journal.conf
+install -D -p -m 0644 caddy-no-mptcp.conf /etc/systemd/system/caddy.service.d/caddy-no-mptcp.conf
+
+# persistent key for Anubis so it doesn't invalidate all cookies by generating a
+# new one on each deploy
+if [ ! -f /etc/anubis/lobsters.key ]; then
+  openssl rand -hex 32 > /etc/anubis/lobsters.key
+  chmod 0644 /etc/anubis/lobsters.key
+fi
+install -p -m 0644 lobsters.anubis.env /etc/anubis/lobsters.env
+install -p -m 0644 lobsters.botPolicies.yaml /etc/anubis/lobsters.botPolicies.yaml
+rm -f /etc/anubis/default.env # not used, distraction
+
+# pick up changes to services
+systemctl daemon-reload
+systemctl enable --now anubis@lobsters.service
+systemctl enable --now opendkim
+systemctl enable --now postfix
+systemctl restart anubis@lobsters.service # doesn't support reload
+systemctl reload opendkim
+systemctl reload postfix
+
+# quiet logins
+install -p -m 0644 sshd_config /etc/ssh/sshd_config
+
+# configure logrotate
+install -p -m 0644 logrotate.conf /etc/logrotate.d/
+# rm hatchbox's config; logrotate precendence is unreliable
+rm -f /etc/logrotate.d/hatchbox_logrotate.conf
+
+# shell quality of life
+apt install eza fd-find ncdu tmux tree
+
+# shell config; the default .bashrc sources this
+install -p -m 0644 bash_aliases /root/.bash_aliases
+install -p -m 0644 -o deploy -g deploy bash_aliases ~deploy/.bash_aliases
+
+install -p -m 0644 sqliterc /root/.sqliterc
+install -p -m 0644 -o deploy -g deploy sqliterc ~deploy/.sqliterc
+
+# make iptables record readable for transparency
+netfilter-persistent save
+chmod go+r /etc/iptables/rules.v4 /etc/iptables/rules.v6
+
+# CommentRedirectCache: Rails runs as deploy and fills c/, Caddy reads it.
+install -d -o deploy -g deploy /home/deploy/lobsters/shared/comment_redirects
+install -d -o deploy -g deploy /home/deploy/lobsters/shared/comment_redirects/c
+
+# run restic to back up /etc
+export HOME=/root
+source $APP_ETC/restic-env
+restic backup --cleanup-cache --no-scan /etc

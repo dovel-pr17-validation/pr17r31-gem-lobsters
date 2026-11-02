@@ -1,0 +1,20 @@
+<div class="inside">
+  <h1>Banned IPs</h1>
+
+  <p>
+  Lobsters has been forced to ban some IPs and ranges to prevent being overloaded by aggressive bots that use thousands of IPs to evade rate limiting.
+  We don't try to block VPNs, but if your VPN is also used by obviously abusive bots, it may get banned.
+  Lobsters <a href="/about#transparency">does not use IP bans to block users</a>; all user bans appear in <a href="/moderations">the moderation log</a>.
+  </p>
+
+  <% @groups.each do |comment, ranges| %>
+    <details>
+      <summary><%= comment %>, <%= pluralize(ranges.size, "range") %></summary>
+      <ul>
+        <% ranges.each do |range| %>
+          <li><%= range %></li>
+        <% end %>
+      </ul>
+    </details>
+  <% end %>
+</div>

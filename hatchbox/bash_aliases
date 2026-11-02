@@ -1,0 +1,27 @@
+export EDITOR=vim
+export HISTFILESIZE=$HISTSIZE
+export HISTIGNORE=[fb]g
+export HISTSIZE=100000
+export PAGER="less -R"
+
+alias ..="cd ../"
+alias ...="cd ../.."
+alias ....="cd ../../.."
+alias .....="cd ../../../.."
+alias ......="cd ../../../../.."
+alias be="bundle exec"
+alias c="curl"
+alias cl="clear"
+alias con="cd ~deploy/lobsters/current; bundle exec rails console"
+alias db="cd ~deploy/lobsters/current; ~deploy/lobsters/current/bin/sqlite3 ~/lobsters/shared/storage/primary.sqlite3"
+alias e="exa"
+alias et="exa -snew"
+alias fd="fdfind"
+alias gerp="grep"
+alias g="git"
+alias log="cd ~deploy/lobsters/shared/log"
+alias s="~deploy/lobsters/current/bin/sqlite3"
+alias sqlite3="~deploy/lobsters/current/bin/sqlite3"
+alias vi="vim"
+
+set -o vi
