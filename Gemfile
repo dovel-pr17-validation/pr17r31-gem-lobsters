@@ -14,7 +14,7 @@ gem "mission_control-jobs"
 
 # rails
 gem "activerecord-typedstore"
-gem "importmap-rails", "~> 2.0"
+gem "importmap-rails", "~> 2.2"
 gem "propshaft"
 gem "sentry-rails"
 gem "typeid"
@@ -33,7 +33,7 @@ gem "rqrcode"
 
 # parsing
 gem "cgi"
-gem "commonmarker", "~> 2.6.3"
+gem "commonmarker", "~> 2.10.1"
 gem "htmlentities"
 gem "pdf-reader"
 gem "nokogiri"
